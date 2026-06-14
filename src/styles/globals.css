@@ -77,38 +77,6 @@ h5 {
   background: rgb(var(--color-muted));
 }
 
-/* Flipbook page-turn */
-.book-stage {
-  transition: transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
-  will-change: transform;
-}
-.flip-next {
-  animation: flip-next 0.45s ease;
-}
-.flip-prev {
-  animation: flip-prev 0.45s ease;
-}
-@keyframes flip-next {
-  0% {
-    opacity: 0.4;
-    transform: perspective(1600px) rotateY(8deg);
-  }
-  100% {
-    opacity: 1;
-    transform: perspective(1600px) rotateY(0deg);
-  }
-}
-@keyframes flip-prev {
-  0% {
-    opacity: 0.4;
-    transform: perspective(1600px) rotateY(-8deg);
-  }
-  100% {
-    opacity: 1;
-    transform: perspective(1600px) rotateY(0deg);
-  }
-}
-
 @layer components {
   .input-field {
     @apply w-full bg-surface border border-border rounded-sm px-4 py-2.5 text-text

@@ -67,10 +67,9 @@ function chunk(arr, n) {
   return out
 }
 
-const PortfolioPages = forwardRef(function PortfolioPages(
-  { interactive = false, exporting = false },
-  ref
-) {
+// Builds the ordered array of <Page> nodes. Exposed as a hook so other views
+// (e.g. the FlipBook) can place pages individually.
+export function usePortfolioPageNodes({ interactive = false, exporting = false } = {}) {
   const { studentInfo, aboutMe, skills, cv, projects, builder } =
     usePortfolioStore()
 
@@ -87,12 +86,17 @@ const PortfolioPages = forwardRef(function PortfolioPages(
       const key = ci === 0 ? baseKey : `${baseKey}-${ci}`
       pages.push(
         <Page key={key} pageKey={key} interactive={interactive} footer={fnum()}>
-          <p className="eyebrow mb-3">{eyebrow}</p>
-          <h2 className="mb-6 font-display text-4xl">
-            {title}
-            {groups.length > 1 ? ` (${ci + 1}/${groups.length})` : ''}
-          </h2>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-5">
+          {ci === 0 ? (
+            <>
+              <p className="eyebrow mb-3">{eyebrow}</p>
+              <h2 className="mb-6 font-display text-4xl">{title}</h2>
+            </>
+          ) : (
+            // Continuation pages: keep context, but the big title only appears
+            // on the section's first page (book-like flow).
+            <p className="eyebrow mb-6 text-muted">{title} — continued</p>
+          )}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-6">
             {group.map((it) => (
               <div key={it.id}>
                 <div
@@ -330,7 +334,7 @@ const PortfolioPages = forwardRef(function PortfolioPages(
             title: 'Concept',
             items: conceptImages,
             perPage: 4,
-            cellHeight: 240,
+            cellHeight: 300,
           })
         }
 
@@ -347,8 +351,8 @@ const PortfolioPages = forwardRef(function PortfolioPages(
             eyebrow: o.name,
             title: 'Concept Diagrams',
             items: conceptDiagrams,
-            perPage: 6,
-            cellHeight: 200,
+            perPage: 4,
+            cellHeight: 300,
           })
         }
 
@@ -364,8 +368,10 @@ const PortfolioPages = forwardRef(function PortfolioPages(
             eyebrow: o.name,
             title: 'Drawings',
             items: drawings,
-            perPage: 6,
-            cellHeight: 200,
+            // Floor plans need to be readable: 4 per A4 page (2×2), so 10 plans
+            // flow across 3 pages instead of cramming into one.
+            perPage: 4,
+            cellHeight: 330,
           })
         }
 
@@ -382,7 +388,7 @@ const PortfolioPages = forwardRef(function PortfolioPages(
               sub: s.category,
             })),
             perPage: 4,
-            cellHeight: 300,
+            cellHeight: 330,
           })
         }
       })
@@ -404,6 +410,11 @@ const PortfolioPages = forwardRef(function PortfolioPages(
     )
   }
 
+  return pages
+}
+
+const PortfolioPages = forwardRef(function PortfolioPages(props, ref) {
+  const pages = usePortfolioPageNodes(props)
   return (
     <div ref={ref} className="space-y-8">
       {pages}
