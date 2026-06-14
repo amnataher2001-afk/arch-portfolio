@@ -83,7 +83,7 @@ export default function ExportPDF() {
         }}
       >
         <div ref={ref}>
-          <PortfolioPages />
+          <PortfolioPages exporting />
         </div>
       </div>
     </div>

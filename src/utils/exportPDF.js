@@ -1,10 +1,14 @@
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 
+const MAX_CANVAS_WIDTH = 1200 // cap rasterized page width for speed + size
+
 /**
  * Render every .portfolio-page inside `container` to a multi-page A4 PDF.
- * Each page node is rasterized with html2canvas, then placed on its own
- * A4 page in jsPDF.
+ * There is NO page cap — every .portfolio-page node becomes one PDF page.
+ *
+ * Speed/size: each page is rasterized at most ~1200px wide and encoded as a
+ * compressed JPEG, which keeps the file small and the export fast.
  *
  * @param {HTMLElement} container element containing .portfolio-page nodes
  * @param {string} fileName output file name
@@ -14,8 +18,7 @@ export async function exportPortfolioPDF(container, fileName = 'portfolio.pdf', 
   const pages = container.querySelectorAll('.portfolio-page')
   if (pages.length === 0) throw new Error('Nothing to export.')
 
-  // Web fonts must be fully loaded before rasterizing, otherwise html2canvas
-  // measures fallback-font metrics and the text overlaps.
+  // Web fonts must be loaded before rasterizing, or text uses fallback metrics.
   if (document.fonts?.ready) {
     try {
       await document.fonts.ready
@@ -32,35 +35,36 @@ export async function exportPortfolioPDF(container, fileName = 'portfolio.pdf', 
     const node = pages[i]
     const bg = getComputedStyle(node).backgroundColor || '#ffffff'
 
+    // Resize to max 1200px wide before rasterizing (downscale source images
+    // too, since html2canvas renders at displaySize × scale).
+    const scale = Math.min(2, MAX_CANVAS_WIDTH / node.offsetWidth)
+
     const canvas = await html2canvas(node, {
-      scale: 2, // high-resolution output
+      scale,
       useCORS: true,
       backgroundColor: bg,
       logging: false,
-      // Capture at the node's real layout size, independent of any CSS
-      // transform on ancestors (a transform breaks text positioning).
+      imageTimeout: 0,
       width: node.offsetWidth,
       height: node.offsetHeight,
       windowWidth: node.offsetWidth,
       windowHeight: node.offsetHeight,
     })
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.95)
+    // Compressed JPEG keeps the PDF small and fast to build.
+    const imgData = canvas.toDataURL('image/jpeg', 0.8)
 
-    // Fit the page image to A4 while preserving aspect ratio (no squishing,
-    // which is what caused text to look compressed/overlapping).
-    let imgW = pageW
-    let imgH = (canvas.height * pageW) / canvas.width
-    if (imgH > pageH) {
-      imgH = pageH
-      imgW = (canvas.width * pageH) / canvas.height
-    }
-    const x = (pageW - imgW) / 2
+    // Always place at full page width; if the page is slightly taller than A4
+    // the overflow is clipped by the page edge (never squished into a strip).
+    const imgW = pageW
+    const imgH = (canvas.height * pageW) / canvas.width
 
     if (i > 0) pdf.addPage()
-    pdf.addImage(imgData, 'JPEG', x, 0, imgW, imgH)
+    pdf.addImage(imgData, 'JPEG', 0, 0, imgW, imgH, undefined, 'FAST')
 
     onProgress?.(i + 1, pages.length)
+    // Yield so the progress UI can paint between pages.
+    await new Promise((r) => setTimeout(r, 0))
   }
 
   pdf.save(fileName)

@@ -23,7 +23,7 @@ function Page({ pageKey, interactive = false, children, footer }) {
   )
 }
 
-function MediaBox({ media, className = '', alt }) {
+function MediaBox({ media, className = '', alt, exporting = false }) {
   const imageSrc =
     media?.pages?.length > 0
       ? media.pages[0]
@@ -32,30 +32,45 @@ function MediaBox({ media, className = '', alt }) {
         : null
 
   if (imageSrc) {
-    return (
-      <img src={imageSrc} alt={alt || ''} className={`object-cover ${className}`} />
-    )
+    return <img src={imageSrc} alt={alt || ''} className={className} />
   }
-  // PDFs: embed the browser's PDF viewer.
+  // PDFs: show the embedded viewer on screen. html2canvas can't rasterize an
+  // <embed>, so during export render a labeled placeholder instead of a blank.
   if (media?.kind === 'pdf' && media?.src) {
-    return (
-      <embed
-        src={media.src}
-        type="application/pdf"
-        className={`border border-border ${className}`}
-      />
-    )
+    if (exporting) {
+      return (
+        <div
+          className={`flex flex-col items-center justify-center gap-1 bg-surface-alt text-muted ${className}`}
+        >
+          <span className="text-2xl text-accent">▥</span>
+          <span className="px-2 text-center text-[10px] leading-tight">
+            {media.fileName || 'PDF drawing'}
+          </span>
+        </div>
+      )
+    }
+    return <embed src={media.src} type="application/pdf" className={className} />
   }
   return (
     <div
-      className={`flex items-center justify-center border border-border bg-surface-alt text-xs text-muted ${className}`}
+      className={`flex items-center justify-center bg-surface-alt text-xs text-muted ${className}`}
     >
       No file
     </div>
   )
 }
 
-const PortfolioPages = forwardRef(function PortfolioPages({ interactive = false }, ref) {
+// Split an array into fixed-size chunks (for paginating media grids).
+function chunk(arr, n) {
+  const out = []
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
+  return out
+}
+
+const PortfolioPages = forwardRef(function PortfolioPages(
+  { interactive = false, exporting = false },
+  ref
+) {
   const { studentInfo, aboutMe, skills, cv, projects, builder } =
     usePortfolioStore()
 
@@ -63,6 +78,49 @@ const PortfolioPages = forwardRef(function PortfolioPages({ interactive = false 
   const pages = []
   let pageNo = 0
   const fnum = () => String(++pageNo).padStart(2, '0')
+
+  // Paginate a media list into 2-column grid pages — as many pages as needed.
+  // Each image is fixed-height and object-contain so nothing overlaps text.
+  const pushMediaPages = ({ baseKey, eyebrow, title, items, perPage, cellHeight }) => {
+    const groups = chunk(items, perPage)
+    groups.forEach((group, ci) => {
+      const key = ci === 0 ? baseKey : `${baseKey}-${ci}`
+      pages.push(
+        <Page key={key} pageKey={key} interactive={interactive} footer={fnum()}>
+          <p className="eyebrow mb-3">{eyebrow}</p>
+          <h2 className="mb-6 font-display text-4xl">
+            {title}
+            {groups.length > 1 ? ` (${ci + 1}/${groups.length})` : ''}
+          </h2>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-5">
+            {group.map((it) => (
+              <div key={it.id}>
+                <div
+                  className="flex items-center justify-center overflow-hidden rounded-sm border border-border bg-surface-alt"
+                  style={{ height: `${cellHeight}px` }}
+                >
+                  <MediaBox
+                    media={it.media}
+                    exporting={exporting}
+                    alt={it.name}
+                    className="h-full w-full object-contain"
+                  />
+                </div>
+                {(it.name || it.sub) && (
+                  <p className="mt-2 text-sm font-medium leading-tight">
+                    {it.name || it.sub}
+                  </p>
+                )}
+                {it.sub && it.name && (
+                  <p className="text-xs text-muted">{it.sub}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </Page>
+      )
+    })
+  }
 
   for (const section of builder.order) {
     if (!visible(section)) continue
@@ -239,7 +297,7 @@ const PortfolioPages = forwardRef(function PortfolioPages({ interactive = false 
               <img
                 src={o.heroShot}
                 alt={o.name}
-                className="mt-6 max-h-[460px] w-full object-cover"
+                className="mt-6 max-h-[440px] w-full object-contain"
               />
             )}
             {o.description && (
@@ -258,65 +316,74 @@ const PortfolioPages = forwardRef(function PortfolioPages({ interactive = false 
           </Page>
         )
 
-        // Drawings page (plans + elevations + sections)
-        const drawings = [
-          ...p.plans.items.map((i) => ({ ...i, group: 'Plan' })),
-          ...p.elevations.items.map((i) => ({ ...i, group: 'Elevation' })),
-          ...p.sections.items.map((i) => ({ ...i, group: 'Section' })),
-        ]
-        if (drawings.length > 0) {
-          pages.push(
-            <Page
-              key={`${p.id}-drawings`}
-              pageKey={`${p.id}-drawings`}
-              interactive={interactive}
-              footer={fnum()}
-            >
-              <p className="eyebrow mb-3">{o.name}</p>
-              <h2 className="mb-6 font-display text-4xl">Drawings</h2>
-              <div className="grid grid-cols-2 gap-5">
-                {drawings.map((d) => (
-                  <div key={d.id}>
-                    <MediaBox
-                      media={d.media}
-                      className="h-52 w-full"
-                      alt={d.name}
-                    />
-                    <p className="mt-2 text-sm font-medium">{d.name || d.group}</p>
-                    <p className="text-xs text-muted">{d.group}</p>
-                  </div>
-                ))}
-              </div>
-            </Page>
-          )
+        // Concept images
+        const conceptImages = (p.concept.images || []).map((im) => ({
+          id: im.id,
+          media: im.media,
+          name: im.caption,
+          sub: 'Concept',
+        }))
+        if (conceptImages.length > 0) {
+          pushMediaPages({
+            baseKey: `${p.id}-concept-images`,
+            eyebrow: o.name,
+            title: 'Concept',
+            items: conceptImages,
+            perPage: 4,
+            cellHeight: 240,
+          })
         }
 
-        // Shots page
+        // Concept diagrams
+        const conceptDiagrams = (p.concept.diagrams || []).map((d) => ({
+          id: d.id,
+          media: d.media,
+          name: d.caption,
+          sub: 'Diagram',
+        }))
+        if (conceptDiagrams.length > 0) {
+          pushMediaPages({
+            baseKey: `${p.id}-concept-diagrams`,
+            eyebrow: o.name,
+            title: 'Concept Diagrams',
+            items: conceptDiagrams,
+            perPage: 6,
+            cellHeight: 200,
+          })
+        }
+
+        // Drawings (plans + elevations + sections) — paginated grid
+        const drawings = [
+          ...p.plans.items.map((i) => ({ ...i, sub: 'Plan' })),
+          ...p.elevations.items.map((i) => ({ ...i, sub: 'Elevation' })),
+          ...p.sections.items.map((i) => ({ ...i, sub: 'Section' })),
+        ]
+        if (drawings.length > 0) {
+          pushMediaPages({
+            baseKey: `${p.id}-drawings`,
+            eyebrow: o.name,
+            title: 'Drawings',
+            items: drawings,
+            perPage: 6,
+            cellHeight: 200,
+          })
+        }
+
+        // Renders / shots — paginated grid (larger cells)
         if (p.shots.items.length > 0) {
-          pages.push(
-            <Page
-              key={`${p.id}-shots`}
-              pageKey={`${p.id}-shots`}
-              interactive={interactive}
-              footer={fnum()}
-            >
-              <p className="eyebrow mb-3">{o.name}</p>
-              <h2 className="mb-6 font-display text-4xl">Renders & Shots</h2>
-              <div className="grid grid-cols-2 gap-5">
-                {p.shots.items.map((s) => (
-                  <div key={s.id}>
-                    <MediaBox
-                      media={s.media}
-                      className="h-56 w-full"
-                      alt={s.name}
-                    />
-                    <p className="mt-2 text-sm font-medium">{s.name}</p>
-                    <p className="text-xs text-muted">{s.category}</p>
-                  </div>
-                ))}
-              </div>
-            </Page>
-          )
+          pushMediaPages({
+            baseKey: `${p.id}-shots`,
+            eyebrow: o.name,
+            title: 'Renders & Shots',
+            items: p.shots.items.map((s) => ({
+              id: s.id,
+              media: s.media,
+              name: s.name,
+              sub: s.category,
+            })),
+            perPage: 4,
+            cellHeight: 300,
+          })
         }
       })
     }
